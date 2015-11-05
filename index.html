@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+    <style>
+.terminal {
+    background: black;
+    color: white;
+    font-family: monospace;
+    display: inline-block;
+}
+    </style>
+</head>
+<body>
+    <div>
+        <textarea id="source-main" rows="15" cols="80"></textarea>
+        <br>
+        <button id="run">Run</button>
+        <button id="clear">Clear</button>
+    </div>
+    <div>
+        <pre class="terminal" data-columns="80" data-rows="24"></pre>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/socket.io-stream.js"></script>
+    <script src="/terminal.js"></script>
+    <script>
+        var container = document.querySelector('.terminal');
+        var sourceContainer =  document.querySelector('#source-main');
+        var runButton = document.querySelector('#run');
+        var clearButton = document.querySelector('#clear');
+        var socket = io(location.origin + '/joni');
+        var stream = ss.createStream({decodeStrings: false, encoding: 'utf-8'});
+        var terminal = new Terminal(container.dataset);
+        container.tabindex = 0;
+        ss(socket).emit('new', stream, terminal.dataset);
+        stream.pipe(terminal).dom(container).pipe(stream);
+
+        function exec(arr) {
+            arr.forEach(function(a) {
+                stream.write(a);
+                stream.write(' ');
+            });
+            stream.write(String.fromCharCode(13));
+        }
+
+        function clear() {
+            exec(['clear']);
+        }
+
+        function compileAndRun() {
+            exec(['printf', '\'', sourceContainer.value, '\'', '>', 'main.cpp']);
+            exec(['g++', 'main.cpp']);
+            clear();
+            exec(['./a.out']);
+        }
+        runButton.onclick = compileAndRun;
+        clearButton.onclick = clear;
+    </script>
+</body>
+</html>

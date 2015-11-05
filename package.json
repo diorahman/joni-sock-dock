@@ -1,0 +1,22 @@
+{
+  "name": "joni-sock-dock",
+  "version": "1.0.0",
+  "description": "Joni, socket.io, docker",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "joni",
+    "docker",
+    "socket.io"
+  ],
+  "author": "Dhi Aurrahman <diorahman@rockybars.com>",
+  "license": "MIT",
+  "dependencies": {
+    "dockerode": "^2.2.3",
+    "socket.io": "^1.3.7",
+    "socket.io-stream": "^0.9.0",
+    "terminal.js": "^1.0.6"
+  }
+}
