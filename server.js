@@ -65,6 +65,14 @@ io.on('connection', function(socket) {
 
             container.attach(attachOptions, function(err, attachedContainerStream) {
 
+                attachedContainerStream.on('data', function(chunk) {
+                    console.log(chunk, chunk.toString(), chunk[chunk.length - 1]);
+                });
+
+                attachedContainerStream.on('end', function() {
+                    console.log('end');
+                });
+
                 attachedContainerStream.pipe(stream).pipe(attachedContainerStream);
 
                 container.start(function(err, data) {
