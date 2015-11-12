@@ -3,6 +3,7 @@ var Docker = require('dockerode');
 var fs = require('fs');
 var socketio = require('socket.io');
 var socketioStream = require('socket.io-stream');
+var passStream = require('pass-stream');
 
 var port = process.env.PORT || 3000;
 var ip = process.env.IP || '0.0.0.0';
@@ -55,9 +56,97 @@ server.on('request', function(req, res) {
 
 var io = socketio(server).of('joni');
 
+
 io.on('connection', function(socket) {
 
+    var count = 0;
+    socket.terminal = {};
+    socket.terminal.buffer = '';
+
+    var psWriteFn = function(data, encoding, cb) {
+
+        if (socket.state == 'NEW') {
+            socket.prompt = data.toString().trim();
+        } else if (data.toString().trim().indexOf(socket.prompt) >= 0 && socket.state == 'WRITE') {
+            if (!socket.terminal.start) {
+                socket.terminal.start = true;
+            }
+
+            if (socket.terminal.start) {
+                console.log('write done');
+                socket.terminal.buffer = '';
+                socket.terminal.start = false;
+
+                // write done, then compile
+                socket.containerStream.write('clear && g++ main.cpp');
+                socket.containerStream.write(String.fromCharCode(13));
+                socket.state = 'COMPILE';
+                socket.terminal.hasError = false;
+            }
+        } else {
+            // Buffer is data without prompt
+            var buffer = data.toString().split(socket.prompt).join('');
+
+            if (socket.state == 'COMPILE') {
+                var r = buffer.charCodeAt(buffer.length - 1);
+                var n = buffer.charCodeAt(buffer.length - 2);
+                if (buffer.length == 1 && r == 32) {
+                    if (!socket.terminal.hasError) {
+                        this.push(socket.terminal.buffer);
+                        this.push('Compiled successfully!\r\n');
+
+                        // then run!
+                        socket.state = 'RUN';
+                        socket.containerStream.write('./a.out');
+                        socket.containerStream.write(String.fromCharCode(13));
+                    }
+                }
+                if (r == 10 && n == 13) {
+                    socket.terminal.buffer += buffer;
+                    console.log(socket.terminal.buffer);
+                    if (socket.terminal.buffer.indexOf('g++') < 0) {
+                        // FIXME: detect error
+                        console.log('has error');
+                        socket.terminal.hasError = true;
+                        this.push(socket.terminal.buffer);
+                    }
+                    socket.terminal.buffer = '';
+                } else {
+                    socket.terminal.buffer += buffer;
+                }
+            } else if (socket.state == 'RUN') {
+                this.push(buffer);
+            }
+        }
+        cb();
+    }
+
+    var psEndFn = function(cb) {
+        cb();
+    }
+
+    var ps = passStream(psWriteFn, psEndFn);
+
     var ioStream = socketioStream(socket);
+
+    ioStream.on('compile', function(stream, data) {
+        count = 0;
+        socket.state = 'WRITE';
+
+        // FIXME: Create a project from source codes
+        //
+        // { sources: {'main.cpp': '#include ...'}, options: {'flags': '-O ..'} }
+        //
+        //
+        var sources = data.sources;
+        socket.containerStream.write('printf \'' + sources['main.cpp'] + '\' > main.cpp');
+        socket.containerStream.write(String.fromCharCode(13));
+    });
+
+    ioStream.on('run', function(stream, data) {
+        socket.containerStream.write(data);
+    });
+
     ioStream.on('new', function(stream, options) {
 
         // FIXME: make it waterfall
@@ -65,17 +154,19 @@ io.on('connection', function(socket) {
 
             container.attach(attachOptions, function(err, attachedContainerStream) {
 
-                attachedContainerStream.on('data', function(chunk) {
-                    console.log(chunk, chunk.toString(), chunk[chunk.length - 1]);
-                });
+                socket.containerStream = attachedContainerStream;
+                socket.state = 'NEW';
 
-                attachedContainerStream.on('end', function() {
-                    console.log('end');
-                });
+                var filtered = socket.containerStream.pipe(ps);
 
-                attachedContainerStream.pipe(stream).pipe(attachedContainerStream);
+                filtered.on('data', function(chunk) {
+                    if (socket.state == 'COMPILE' || socket.state == 'RUN') {
+                        stream.write(chunk);
+                    }
+                });
 
                 container.start(function(err, data) {
+                    // FIXME: notify front-end, we're ready or doomed
                     console.log(err || data || (container.id + ' started.'));
                 });
 

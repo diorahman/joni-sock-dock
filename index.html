@@ -26,36 +26,41 @@
     <script src="/terminal.js"></script>
     <script>
         var container = document.querySelector('.terminal');
-        var sourceContainer =  document.querySelector('#source-main');
         var runButton = document.querySelector('#run');
-        var clearButton = document.querySelector('#clear');
+        var sourceContainer =  document.querySelector('#source-main');
         var socket = io(location.origin + '/joni');
-        var stream = ss.createStream({decodeStrings: false, encoding: 'utf-8'});
+
+        function compile() {
+            var compileStream = ss.createStream({decodeStrings: false, encoding: 'utf-8'});
+            ss(socket).emit('compile', compileStream, {
+                sources: {
+                    'main.cpp': sourceContainer.value 
+                }
+            });
+        }
+
+        runButton.onclick = compile;
+        
+        var newStream = ss.createStream({decodeStrings: false, encoding: 'utf-8'});
+        ss(socket).emit('new', newStream, {});
         var terminal = new Terminal(container.dataset);
         container.tabindex = 0;
-        ss(socket).emit('new', stream, terminal.dataset);
-        stream.pipe(terminal).dom(container).pipe(stream);
 
-        function exec(arr) {
-            arr.forEach(function(a) {
-                stream.write(a);
-                stream.write(' ');
-            });
-            stream.write(String.fromCharCode(13));
-        }
+        var input = newStream.pipe(terminal).dom(container);
+        var buffer = '';
 
-        function clear() {
-            exec(['clear']);
-        }
+        input.on('data', function(chunk) {
+            var code = chunk.toJSON().data.pop();
+            var str = String.fromCharCode(code);
+            // terminal.write(str);
+            buffer += str; 
+            //if (code == 13) {
+            var runStream = ss.createStream({decodeStrings: false, encoding: 'utf-8'});
+            ss(socket).emit('run', runStream, buffer);
+            buffer = '';
+            //}
+        });
 
-        function compileAndRun() {
-            exec(['printf', '\'', sourceContainer.value, '\'', '>', 'main.cpp']);
-            exec(['g++', 'main.cpp']);
-            clear();
-            exec(['./a.out']);
-        }
-        runButton.onclick = compileAndRun;
-        clearButton.onclick = clear;
     </script>
 </body>
 </html>
