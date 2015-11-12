@@ -63,6 +63,32 @@ io.on('connection', function(socket) {
     socket.terminal = {};
     socket.terminal.buffer = '';
 
+    socket.on('error', function() {
+        if (!socket.container) {
+            return;
+        }
+        var container = socket.container;
+        container.stop(function(err) {
+
+            container.remove(function(err) {
+                console.log(err || container.id + ' removed.');
+            });
+        });
+    });
+
+    socket.on('disconnect', function() {
+        if (!socket.container) {
+            return;
+        }
+        var container = socket.container;
+        container.stop(function(err) {
+
+            container.remove(function(err) {
+                console.log(err || container.id + ' removed.');
+            });
+        });
+    });
+
     var psWriteFn = function(data, encoding, cb) {
 
         var buffer = data.toString();
@@ -148,6 +174,8 @@ io.on('connection', function(socket) {
         // FIXME: make it waterfall
         docker.createContainer(containerOptions, function(err, container) {
 
+            socket.container = container;
+
             container.attach(attachOptions, function(err, attachedContainerStream) {
 
                 socket.containerStream = attachedContainerStream;
@@ -166,14 +194,6 @@ io.on('connection', function(socket) {
                     console.log(err || data || (container.id + ' started.'));
                 });
 
-                socket.on('disconnect', function() {
-                    container.stop(function(err) {
-
-                        container.remove(function(err) {
-                            console.log(err || container.id + ' removed.');
-                        });
-                    });
-                });
             });
         });
     });
