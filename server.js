@@ -155,6 +155,7 @@ io.on('connection', function(socket) {
         for (var file in sources) {
             writeCommand += 'printf \'' + sources[file] + '\' > ' + file + ' ;';
         }
+        console.log(writeCommand);
         socket.containerStream.write(writeCommand);
         socket.containerStream.write(String.fromCharCode(13));
     });

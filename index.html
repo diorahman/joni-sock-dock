@@ -62,22 +62,23 @@
 
         function compile() {
             var sources = {};
-            sources['main.cpp'] = sourceContainer.value;
+            sources['main.cpp'] = sourceContainer.value.split('\\').join('\\\\');
             var headerArr = sourcesHContainer.children;
             var sourceArr = sourcesCppContainer.children;
 
             for (var i = 0; i < headerArr.length; i++) {
-                sources['test' + i + '.h'] = headerArr[i].value;
+                sources['test' + i + '.h'] = headerArr[i].value.split('\\').join('\\\\');
             }
             
             for (var i = 0; i < sourceArr.length; i++) {
-                sources['test' + i + '.cpp'] = sourceArr[i].value;
+                sources['test' + i + '.cpp'] = sourceArr[i].value.split('\\').join('\\\\');
             }
 
             var compileStream = ss.createStream({decodeStrings: false, encoding: 'utf-8'});
             ss(socket).emit('compile', compileStream, {
                 sources: sources
             });
+            container.focus();
         }
 
         function clear() {
