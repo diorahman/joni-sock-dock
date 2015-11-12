@@ -65,58 +65,49 @@ io.on('connection', function(socket) {
 
     var psWriteFn = function(data, encoding, cb) {
 
+        var buffer = data.toString();
         if (socket.state == 'NEW') {
-            socket.prompt = data.toString().trim();
-        } else if (data.toString().trim().indexOf(socket.prompt) >= 0 && socket.state == 'WRITE') {
-            if (!socket.terminal.start) {
-                socket.terminal.start = true;
-            }
+            socket.prompt = buffer;
 
-            if (socket.terminal.start) {
-                console.log('write done');
+        } else if (socket.state == 'WRITE') {
+            if (buffer.indexOf(socket.prompt) >= 0) {
                 socket.terminal.buffer = '';
-                socket.terminal.start = false;
-
-                // write done, then compile
-                socket.containerStream.write('clear && g++ main.cpp');
+                socket.containerStream.write('make');
                 socket.containerStream.write(String.fromCharCode(13));
                 socket.state = 'COMPILE';
-                socket.terminal.hasError = false;
+            }
+        } else if (socket.state == 'COMPILE') {
+            socket.terminal.buffer += buffer;
+
+            var line = buffer.split(socket.prompt).join('');
+            if (line.trim() != 'make') {
+                this.push(line);
+            }
+
+            if (buffer.indexOf(socket.prompt) >= 0) {
+
+                // FIXME: check for error
+                if (socket.terminal.buffer.indexOf('make: ***') < 0) {
+                    socket.terminal.buffer = '';
+                    socket.containerStream.write('./app');
+                    socket.containerStream.write(String.fromCharCode(13));
+                    socket.state = 'RUN';
+                } else {
+                    this.push('Compilation error.\r\n');
+                }
+            }
+        } else if (socket.state == 'RUN') {
+            socket.terminal.buffer += buffer;
+            var line = buffer.split(socket.prompt).join('');
+            this.push(line);
+            if (buffer.indexOf(socket.prompt) >= 0) {
+                socket.terminal.buffer = '';
+                console.log('run done');
+                this.push('Process finished.\r\n');
             }
         } else {
-            // Buffer is data without prompt
-            var buffer = data.toString().split(socket.prompt).join('');
-
-            if (socket.state == 'COMPILE') {
-                var r = buffer.charCodeAt(buffer.length - 1);
-                var n = buffer.charCodeAt(buffer.length - 2);
-                if (buffer.length == 1 && r == 32) {
-                    if (!socket.terminal.hasError) {
-                        this.push(socket.terminal.buffer);
-                        this.push('Compiled successfully!\r\n');
-
-                        // then run!
-                        socket.state = 'RUN';
-                        socket.containerStream.write('./a.out');
-                        socket.containerStream.write(String.fromCharCode(13));
-                    }
-                }
-                if (r == 10 && n == 13) {
-                    socket.terminal.buffer += buffer;
-                    console.log(socket.terminal.buffer);
-                    if (socket.terminal.buffer.indexOf('g++') < 0) {
-                        // FIXME: detect error
-                        console.log('has error');
-                        socket.terminal.hasError = true;
-                        this.push(socket.terminal.buffer);
-                    }
-                    socket.terminal.buffer = '';
-                } else {
-                    socket.terminal.buffer += buffer;
-                }
-            } else if (socket.state == 'RUN') {
-                this.push(buffer);
-            }
+            var line = buffer.split(socket.prompt).join('');
+            this.push(line);
         }
         cb();
     }
@@ -130,21 +121,26 @@ io.on('connection', function(socket) {
     var ioStream = socketioStream(socket);
 
     ioStream.on('compile', function(stream, data) {
-        count = 0;
         socket.state = 'WRITE';
-
-        // FIXME: Create a project from source codes
-        //
-        // { sources: {'main.cpp': '#include ...'}, options: {'flags': '-O ..'} }
-        //
-        //
         var sources = data.sources;
-        socket.containerStream.write('printf \'' + sources['main.cpp'] + '\' > main.cpp');
+
+        var writeCommand = '';
+
+        for (var file in sources) {
+            writeCommand += 'printf \'' + sources[file] + '\' > ' + file + ' ;';
+        }
+        socket.containerStream.write(writeCommand);
         socket.containerStream.write(String.fromCharCode(13));
     });
 
     ioStream.on('run', function(stream, data) {
         socket.containerStream.write(data);
+    });
+
+    ioStream.on('clear', function(stream, data) {
+        socket.state = 'CLEAR';
+        socket.containerStream.write('clear');
+        socket.containerStream.write(String.fromCharCode(13));
     });
 
     ioStream.on('new', function(stream, options) {
@@ -160,7 +156,7 @@ io.on('connection', function(socket) {
                 var filtered = socket.containerStream.pipe(ps);
 
                 filtered.on('data', function(chunk) {
-                    if (socket.state == 'COMPILE' || socket.state == 'RUN') {
+                    if (socket.state == 'COMPILE' || socket.state == 'RUN' || socket.state == 'CLEAR') {
                         stream.write(chunk);
                     }
                 });
